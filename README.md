@@ -25,10 +25,14 @@ type Environ struct {
 func main(){
     conf := config.New("example.conf")
     env := &Environ{}
-    conf.Unmarshal(env)
-
-    log.Println(env)
+    err := conf.Unmarshal(env)
+    if err == nil {
+        log.Println(env)
+    }else{
+        log.Println(err)
+    }
 }
+
 ```
 
 Result:

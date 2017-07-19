@@ -125,7 +125,7 @@ func (this *Config) parse() error {
 				v = reflect.New(this.current.Type().Key())
 				this.pushElement(v)
 				err := this.copy(s.String())
-				if err {
+				if err != nil {
 					return err
 				}
 				this.mapKey = this.current
@@ -166,7 +166,7 @@ func (this *Config) parse() error {
 				this.inSearchKey()
 
 				err := this.copy(s.String())
-				if err {
+				if err != nil {
 					return err
 				}
 
