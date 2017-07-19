@@ -124,7 +124,7 @@ func (this *Config) parse() error {
 				var v reflect.Value
 				v = reflect.New(this.current.Type().Key())
 				this.pushElement(v)
-				this.copy(strings.TrimSpace(s.String()))
+				this.copy(s.String())
 				this.mapKey = this.current
 				this.popElement()
 				val := reflect.New(this.current.Type().Elem())
