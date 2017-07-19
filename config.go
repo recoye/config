@@ -124,7 +124,10 @@ func (this *Config) parse() error {
 				var v reflect.Value
 				v = reflect.New(this.current.Type().Key())
 				this.pushElement(v)
-				this.copy(s.String())
+				err := this.copy(s.String())
+				if err {
+					return err
+				}
 				this.mapKey = this.current
 				this.popElement()
 				val := reflect.New(this.current.Type().Elem())
@@ -162,7 +165,10 @@ func (this *Config) parse() error {
 			//	这里是要处理数据到this.current
 				this.inSearchKey()
 
-				this.copy(s.String())
+				err := this.copy(s.String())
+				if err {
+					return err
+				}
 
 				s.Reset()
 				this.popElement()
