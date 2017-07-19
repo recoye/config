@@ -1,5 +1,5 @@
 # Config
-Nginx configuration style parser
+Nginx configuration style parser with golang
 
 # Document
 main.go
