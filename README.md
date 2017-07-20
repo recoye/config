@@ -75,11 +75,6 @@ func main(){
 
 ```
 
-Result:
-```
-2017/07/19 18:48:25 &{false run/log/file.log {127.0.0.1 80}}
-```
-
 example.conf
 
 ```
@@ -90,4 +85,10 @@ server {
     host 127.0.0.1;
     port 80;
 }
+```
+
+Result:
+
+```
+2017/07/19 18:48:25 &{false run/log/file.log {127.0.0.1 80}}
 ```
