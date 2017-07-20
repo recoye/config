@@ -1,7 +1,12 @@
 # Config
 Nginx configuration style parser with golang
 
-# Document
+# Install
+```
+go get github.com/recoye/config
+```
+
+# Example
 main.go
 
 ```
