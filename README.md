@@ -6,6 +6,41 @@ Nginx configuration style parser with golang
 go get github.com/recoye/config
 ```
 
+# Document
+1. Create a new file(example.conf)
+
+```
+#daemon yes;
+daemon no;
+log_file run/log/file.log;
+server {
+    host 127.0.0.1;
+    port 80;
+}
+```
+
+1. Define configuration's struct
+
+```
+type ServConf struct {
+    Host string
+    Port int
+}
+type Environ struct {
+    Daemon bool
+    Log_file string
+    Server ServConf
+}
+```
+
+1. map file to struct
+
+```
+conf := config.New("example.conf")
+env = &Environ{}
+err = conf.Unmarshal(env)
+```
+
 # Example
 main.go
 
