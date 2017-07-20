@@ -7,7 +7,7 @@ go get github.com/recoye/config
 ```
 
 # Document
-1. Create a new file(example.conf)
+1) Create a new file(example.conf)
 
 ```
 #daemon yes;
@@ -19,7 +19,7 @@ server {
 }
 ```
 
-1. Define configuration's struct
+2) Define configuration's struct
 
 ```
 type ServConf struct {
@@ -33,7 +33,7 @@ type Environ struct {
 }
 ```
 
-1. map file to struct
+3) map file to struct
 
 ```
 conf := config.New("example.conf")
