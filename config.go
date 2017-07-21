@@ -124,7 +124,7 @@ func (this *Config) parse() error {
 				var v reflect.Value
 				v = reflect.New(this.current.Type().Key())
 				this.pushElement(v)
-				err := this.copy(s.String())
+				err := this.set(s.String())
 				if err != nil {
 					return err
 				}
@@ -165,7 +165,7 @@ func (this *Config) parse() error {
 			//	这里是要处理数据到this.current
 				this.inSearchKey()
 
-				err := this.copy(s.String())
+				err := this.set(s.String())
 				if err != nil {
 					return err
 				}
@@ -180,11 +180,10 @@ func (this *Config) parse() error {
 		s.WriteByte(b)
 	}
 
-
 	return nil
 }
 
-func (this *Config) copy(s string) error {
+func (this *Config) set(s string) error {
 	s = strings.TrimSpace(s)
 	if this.current.Kind() == reflect.Ptr {
 		if this.current.IsNil() {
@@ -232,7 +231,7 @@ func (this *Config) copy(s string) error {
 			n := this.current.Len()
 			this.current.Set(reflect.Append(this.current, reflect.Zero(this.current.Type().Elem())))
 			this.pushElement(this.current.Index(n))
-			this.copy(sv)
+			this.set(sv)
 			this.popElement()
 		}
 	case reflect.Map:
@@ -247,12 +246,12 @@ func (this *Config) copy(s string) error {
 		var v reflect.Value
 		v=reflect.New(this.current.Type().Key())
 		this.pushElement(v)
-		this.copy(sf[0])
+		this.set(sf[0])
 		key := this.current
 		this.popElement()
 		v = reflect.New(this.current.Type().Elem())
 		this.pushElement(v)
-		this.copy(sf[1])
+		this.set(sf[1])
 		val := this.current
 		this.popElement()
 
@@ -288,6 +287,7 @@ func (this *Config) pushElement(v reflect.Value) {
 	this.queue = append(this.queue, this.current)
 	this.current = v
 }
+
 func (this *Config) popElement() {
 	this.current = this.queue[len(this.queue) - 1]
 	this.queue = this.queue[:len(this.queue) - 1]
