@@ -12,6 +12,7 @@ import (
 	"strings"
 	"strconv"
 	"fmt"
+	"path/filepath"
 )
 
 type Config struct {
@@ -179,8 +180,15 @@ func (this *Config) parse() error {
 					this.filename = strings.TrimSpace(s.String())
 					s.Reset()
 					this.inInclude--
-					if err := this.parse(); err != nil {
+					files, err := filepath.Glob(this.filename)
+					if err != nil{
 						return err
+					}
+					for _,file := range files {
+						this.filename = file
+						if err := this.parse(); err != nil {
+							return err
+						}
 					}
 					continue
 				}
