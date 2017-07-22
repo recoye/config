@@ -22,6 +22,7 @@ type Config struct {
 	searchVal bool
 	searchKey bool
 	inBlock int
+	inInclude int
 	canSkip bool
 	skip bool
 	bkMulti int
@@ -42,6 +43,7 @@ func (this *Config) Unmarshal(v interface{}) error{
 	this.current = rev.Elem()
 	this.inSearchKey()
 	this.inBlock = 0
+	this.inInclude = 0
 	return this.parse()
 }
 
@@ -98,9 +100,17 @@ func (this *Config) parse() error {
 		if this.searchKey {
 			if b == ' ' || b == '\r' || b == '\n' || b == '\t' {
 				if s.Len() > 0 {
+					this.inSearchVal()
+					if strings.Compare(s.String(), "include") == 0 {
+						s.Reset()
+						this.inInclude++
+						if this.inInclude > 100 {
+							return errors.New("too many include, exceeds 100 limit!")
+						}
+						continue
+					}
 					this.getElement(s.String())
 					s.Reset()
-					this.inSearchVal()
 				}
 				continue
 			}
@@ -162,10 +172,22 @@ func (this *Config) parse() error {
 
 		if this.searchVal {
 			if b == ';' {
-			//	这里是要处理数据到this.current
+				//	这里是要处理数据到this.current
 				this.inSearchKey()
 
+				if this.inInclude > 0 {
+					this.filename = strings.TrimSpace(s.String())
+					s.Reset()
+					this.inInclude--
+					if err := this.parse(); err != nil {
+						return err
+					}
+					continue
+				}
+
 				err := this.set(s.String())
+				cs := s.String()
+				log.Println(cs)
 				if err != nil {
 					return err
 				}
@@ -257,7 +279,7 @@ func (this *Config) set(s string) error {
 
 		this.current.SetMapIndex(key, val)
 	default:
-		return errors.New(fmt.Sprintf("Invalid Type %s", this.current.Kind()))
+		return errors.New(fmt.Sprintf("Invalid Type:%s", this.current.Kind()))
 	}
 	return nil
 }
