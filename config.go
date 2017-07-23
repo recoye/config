@@ -101,6 +101,7 @@ func (this *Config) parse() error {
 		if this.searchKey {
 			if b == ' ' || b == '\r' || b == '\n' || b == '\t' {
 				if s.Len() > 0 {
+					log.Println(s.String())
 					this.inSearchVal()
 					if strings.Compare(s.String(), "include") == 0 {
 						s.Reset()
@@ -148,7 +149,11 @@ func (this *Config) parse() error {
 			if this.current.Kind() == reflect.Slice {
 				this.bkMulti++
 				n := this.current.Len()
-				this.current.Set(reflect.Append(this.current, reflect.Zero(this.current.Type().Elem())))
+				if this.current.Type().Elem().Kind() == reflect.Ptr {
+					this.current.Set(reflect.Append(this.current, reflect.New(this.current.Type().Elem().Elem())))
+				}else{
+					this.current.Set(reflect.Append(this.current, reflect.Zero(this.current.Type().Elem())))
+				}
 				this.pushElement(this.current.Index(n))
 			}
 			this.inSearchKey()
@@ -244,9 +249,9 @@ func (this *Config) set(s string) error {
 		}
 		this.current.SetFloat(ftmp)
 	case reflect.Bool:
-		if s == "yes" {
+		if s == "yes" || s == "on" {
 			this.current.SetBool(true)
-		}else if s == "no" {
+		}else if s == "no" || s == "off" {
 			this.current.SetBool(false)
 		}else{
 			btmp, err := strconv.ParseBool(s)
