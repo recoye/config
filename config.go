@@ -309,6 +309,9 @@ func (this *Config) inSearchVal() {
 func (this *Config) getElement(s string){
 	s = strings.TrimSpace(s)
 	if this.current.Kind() == reflect.Ptr {
+		if this.current.IsNil() {
+			this.current.Set(reflect.New(this.current.Type().Elem()))
+		}
 		this.current = this.current.Elem()
 	}
 	this.queue = append(this.queue, this.current)
