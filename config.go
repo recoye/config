@@ -101,7 +101,6 @@ func (this *Config) parse() error {
 		if this.searchKey {
 			if b == ' ' || b == '\r' || b == '\n' || b == '\t' {
 				if s.Len() > 0 {
-					log.Println(s.String())
 					this.inSearchVal()
 					if strings.Compare(s.String(), "include") == 0 {
 						s.Reset()
@@ -199,8 +198,6 @@ func (this *Config) parse() error {
 				}
 
 				err := this.set(s.String())
-				cs := s.String()
-				log.Println(cs)
 				if err != nil {
 					return err
 				}
