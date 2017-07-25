@@ -28,6 +28,11 @@ type Config struct {
 	skip bool
 	bkMulti int
 	mapKey reflect.Value
+	setVar bool
+	searchVar bool
+	searchVarBlock bool
+	vars []map[string]string
+	currentVar map[string]string
 }
 
 func New(filename string) *Config {
@@ -45,6 +50,10 @@ func (this *Config) Unmarshal(v interface{}) error{
 	this.inSearchKey()
 	this.inBlock = 0
 	this.inInclude = 0
+	this.currentVar = make(map[string]string)
+	this.searchVar = false
+	this.setVar = false
+	this.searchVarBlock = false
 	return this.parse()
 }
 
@@ -66,6 +75,8 @@ func (this *Config) watch() {
 func (this *Config) parse() error {
 	var err error
 	var s bytes.Buffer
+	var vs bytes.Buffer
+	var vsb bytes.Buffer
 	if _, err = os.Stat(this.filename);os.IsNotExist(err) {
 		return err
 	}
@@ -109,6 +120,10 @@ func (this *Config) parse() error {
 							return errors.New("too many include, exceeds 100 limit!")
 						}
 						continue
+					}else if strings.Compare(s.String(), "set") == 0 {
+						s.Reset()
+						this.setVar = true
+						continue
 					}
 					this.getElement(s.String())
 					s.Reset()
@@ -117,13 +132,18 @@ func (this *Config) parse() error {
 			}
 		}
 
-		if b == '{' {
+		if b == '{' && !this.searchVar {
 			// fixed { be close to key like server{
 			if this.searchKey && s.Len() > 0 {
 				this.getElement(s.String())
 				s.Reset()
 				this.inSearchVal()
 			}
+
+			// vars
+			vars := make(map[string]string)
+			this.vars = append(this.vars, this.currentVar)
+			this.currentVar = vars
 
 			this.inBlock++
 			//	这里说明了可能是切片或者map
@@ -160,7 +180,7 @@ func (this *Config) parse() error {
 			continue
 		}
 
-		if b == '}' && this.inBlock > 0 {
+		if this.searchKey && b == '}' && this.inBlock > 0 {
 			if this.bkMulti > 0{
 				this.bkMulti--
 				val := this.current
@@ -169,6 +189,11 @@ func (this *Config) parse() error {
 					this.current.SetMapIndex(this.mapKey, val)
 				}
 			}
+
+			// vars
+			this.currentVar = this.vars[len(this.vars) - 1]
+			this.vars = this.vars[:len(this.vars) - 1]
+
 			this.inBlock--
 			this.popElement()
 			this.inSearchKey()
@@ -176,9 +201,56 @@ func (this *Config) parse() error {
 		}
 
 		if this.searchVal {
+			if b == '$' {
+				this.searchVar = true
+				vs.Reset()
+				vsb.Reset()
+				vsb.WriteByte(b)
+				continue;
+			}
+
+			if this.searchVar && b == '{' && vs.Len() == 0 {
+				this.searchVarBlock = true
+				vsb.WriteByte(b)
+				continue
+			}
+
+			if this.searchVarBlock && b == '}' {
+				this.searchVarBlock = false
+			    // 判定是不是有值
+				this.searchVar = false
+				if !this.replace(&s, vs) {
+					vsb.WriteByte(b)
+					s.Write(vsb.Bytes())
+				}
+				continue
+			}
+
 			if b == ';' {
 				//	这里是要处理数据到this.current
 				this.inSearchKey()
+				if this.searchVar {
+					if this.searchVarBlock {
+						return errors.New(vsb.String() + " is not terminated by }")
+					}
+					this.searchVar = false
+					this.searchVarBlock = false
+					if !this.replace(&s, vs) {
+						s.Write(vsb.Bytes())
+					}
+				}
+
+				// set to map
+				if this.setVar {
+					sf := strings.Fields(s.String())
+					if len(sf) != 2 {
+						return errors.New("Invalid Config")
+					}
+					this.currentVar[sf[0]] = sf[1]
+					this.setVar = false
+					s.Reset()
+					continue
+				}
 
 				if this.inInclude > 0 {
 					this.filename = strings.TrimSpace(s.String())
@@ -205,11 +277,21 @@ func (this *Config) parse() error {
 				s.Reset()
 				this.popElement()
 				continue
+			}else if(this.searchVar) { // if b == ';'
+				vs.WriteByte(b)
+				vsb.WriteByte(b)
+				if ! this.searchVarBlock{
+					this.replace(&s, vs)
+				}
+				continue
 			}
-
 		}
 
 		s.WriteByte(b)
+	}
+
+	if !this.searchKey && this.inBlock > 0 {
+		return errors.New("Invalid config file!")
 	}
 
 	return nil
@@ -292,6 +374,33 @@ func (this *Config) set(s string) error {
 		return errors.New(fmt.Sprintf("Invalid Type:%s", this.current.Kind()))
 	}
 	return nil
+}
+
+func (this *Config) replace(s *bytes.Buffer, vs bytes.Buffer) bool {
+	if vs.Len() == 0 {
+		return false
+	}
+
+	for k,v := range this.currentVar{
+		if strings.Compare(k, vs.String()) == 0 {
+			// found
+			this.searchVar = false
+			s.WriteString(v)
+			return true
+		}
+	}
+
+	for i:= len(this.vars) - 1; i >= 0 ;i-- {
+		for k, v := range this.vars[i] {
+			if strings.Compare(k, vs.String()) == 0 {
+				s.WriteString(v)
+				this.searchVar = false
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func (this *Config) inSearchKey() {
