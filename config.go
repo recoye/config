@@ -133,7 +133,7 @@ func (this *Config) parse() error {
 		}
 
 		if b == '{' && !this.searchVar && vs.Len() == 0 {
-			if err := this.openBlock(&s); err != nil {
+			if err := this.createBlock(&s); err != nil {
 				return err
 			}
 			continue
@@ -166,7 +166,7 @@ func (this *Config) parse() error {
 						}
 
 						// is block?
-						if err := this.openBlock(&s);err != nil {
+						if err := this.createBlock(&s);err != nil {
 							return err
 						}else{
 							continue
@@ -371,7 +371,7 @@ func (this *Config) replace(s *bytes.Buffer, vs *bytes.Buffer) bool {
 	return false
 }
 
-func (this *Config) openBlock(s *bytes.Buffer) error {
+func (this *Config) createBlock(s *bytes.Buffer) error {
 	// fixed { be close to key like server{
 	if this.searchKey && s.Len() > 0 {
 		this.getElement(s.String())
