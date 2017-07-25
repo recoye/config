@@ -2,9 +2,6 @@ package config
 
 import (
 	"os"
-	"log"
-	"os/signal"
-	"syscall"
 	"bufio"
 	"bytes"
 	"reflect"
@@ -13,11 +10,11 @@ import (
 	"strconv"
 	"fmt"
 	"path/filepath"
+	"unicode"
 )
 
 type Config struct {
 	filename string
-	data interface{}
 	queue []reflect.Value
 	current reflect.Value
 	searchVal bool
@@ -45,7 +42,6 @@ func (this *Config) Unmarshal(v interface{}) error{
 		err := errors.New("non-pointer passed to Unmarshal")
 		return err
 	}
-	this.data = v
 	this.current = rev.Elem()
 	this.inSearchKey()
 	this.inBlock = 0
@@ -59,17 +55,6 @@ func (this *Config) Unmarshal(v interface{}) error{
 
 func (this *Config) Reload() error {
 	return this.parse()
-}
-
-func (this *Config) watch() {
-	l := log.New(os.Stderr, "", 0)
-	sighup := make(chan os.Signal, 1)
-	signal.Notify(sighup, syscall.SIGHUP)
-	for {
-		<-sighup
-		l.Println("Caught SIGHUP, reloading config...")
-		this.parse()
-	}
 }
 
 func (this *Config) parse() error {
@@ -110,7 +95,7 @@ func (this *Config) parse() error {
 			continue
 		}
 		if this.searchKey {
-			if b == ' ' || b == '\r' || b == '\n' || b == '\t' {
+			if this.delimiter(b) {
 				if s.Len() > 0 {
 					this.inSearchVal()
 					if strings.Compare(s.String(), "include") == 0 {
@@ -173,7 +158,8 @@ func (this *Config) parse() error {
 						}
 					}
 				} // if b == '{'
-				if b == ' ' || b == '\r' || b == '\n' || b == '\t' {
+				// Is space
+				if this.delimiter(b) {
 					if !this.replace(&s, &vs) {
 						s.Write(vsb.Bytes())
 					}
@@ -470,4 +456,8 @@ func (this *Config) pushElement(v reflect.Value) {
 func (this *Config) popElement() {
 	this.current = this.queue[len(this.queue) - 1]
 	this.queue = this.queue[:len(this.queue) - 1]
+}
+
+func (this *Config) delimiter(b byte) bool {
+	return unicode.IsSpace(rune(b))
 }
