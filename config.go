@@ -132,71 +132,15 @@ func (this *Config) parse() error {
 			}
 		}
 
-		if b == '{' && !this.searchVar {
-			// fixed { be close to key like server{
-			if this.searchKey && s.Len() > 0 {
-				this.getElement(s.String())
-				s.Reset()
-				this.inSearchVal()
+		if b == '{' && !this.searchVar && vs.Len() == 0 {
+			if err := this.openBlock(&s); err != nil {
+				return err
 			}
-
-			// vars
-			vars := make(map[string]string)
-			this.vars = append(this.vars, this.currentVar)
-			this.currentVar = vars
-
-			this.inBlock++
-			//	这里说明了可能是切片或者map
-			if this.searchVal && s.Len() > 0 && this.current.Kind() == reflect.Map {
-				this.bkMulti++
-				if this.current.IsNil() {
-					this.current.Set(reflect.MakeMap(this.current.Type()))
-				}
-				var v reflect.Value
-				v = reflect.New(this.current.Type().Key())
-				this.pushElement(v)
-				err := this.set(s.String())
-				if err != nil {
-					return err
-				}
-				this.mapKey = this.current
-				this.popElement()
-				val := reflect.New(this.current.Type().Elem())
-				this.pushElement(val)
-			}
-
-			if this.current.Kind() == reflect.Slice {
-				this.bkMulti++
-				n := this.current.Len()
-				if this.current.Type().Elem().Kind() == reflect.Ptr {
-					this.current.Set(reflect.Append(this.current, reflect.New(this.current.Type().Elem().Elem())))
-				}else{
-					this.current.Set(reflect.Append(this.current, reflect.Zero(this.current.Type().Elem())))
-				}
-				this.pushElement(this.current.Index(n))
-			}
-			this.inSearchKey()
-			s.Reset()
 			continue
 		}
 
 		if this.searchKey && b == '}' && this.inBlock > 0 {
-			if this.bkMulti > 0{
-				this.bkMulti--
-				val := this.current
-				this.popElement()
-				if this.current.Kind() == reflect.Map {
-					this.current.SetMapIndex(this.mapKey, val)
-				}
-			}
-
-			// vars
-			this.currentVar = this.vars[len(this.vars) - 1]
-			this.vars = this.vars[:len(this.vars) - 1]
-
-			this.inBlock--
-			this.popElement()
-			this.inSearchKey()
+			this.closeBlock(&s)
 			continue
 		}
 
@@ -209,17 +153,39 @@ func (this *Config) parse() error {
 				continue;
 			}
 
-			if this.searchVar && b == '{' && vs.Len() == 0 {
-				this.searchVarBlock = true
-				vsb.WriteByte(b)
-				continue
+			if this.searchVar {
+				if b == '{' {
+					if vs.Len() == 0 {
+						this.searchVarBlock = true
+						vsb.WriteByte(b)
+						continue
+					}
+					if !this.searchVarBlock {
+						if !this.replace(&s, &vs) {
+							s.Write(vsb.Bytes())
+						}
+
+						// is block?
+						if err := this.openBlock(&s);err != nil {
+							return err
+						}else{
+							continue
+						}
+					}
+				} // if b == '{'
+				if b == ' ' || b == '\r' || b == '\n' || b == '\t' {
+					if !this.replace(&s, &vs) {
+						s.Write(vsb.Bytes())
+					}
+				}
 			}
+
 
 			if this.searchVarBlock && b == '}' {
 				this.searchVarBlock = false
 			    // 判定是不是有值
 				this.searchVar = false
-				if !this.replace(&s, vs) {
+				if !this.replace(&s, &vs) {
 					vsb.WriteByte(b)
 					s.Write(vsb.Bytes())
 				}
@@ -235,7 +201,7 @@ func (this *Config) parse() error {
 					}
 					this.searchVar = false
 					this.searchVarBlock = false
-					if !this.replace(&s, vs) {
+					if !this.replace(&s, &vs) {
 						s.Write(vsb.Bytes())
 					}
 				}
@@ -281,7 +247,7 @@ func (this *Config) parse() error {
 				vs.WriteByte(b)
 				vsb.WriteByte(b)
 				if ! this.searchVarBlock{
-					this.replace(&s, vs)
+					this.replace(&s, &vs)
 				}
 				continue
 			}
@@ -376,7 +342,7 @@ func (this *Config) set(s string) error {
 	return nil
 }
 
-func (this *Config) replace(s *bytes.Buffer, vs bytes.Buffer) bool {
+func (this *Config) replace(s *bytes.Buffer, vs *bytes.Buffer) bool {
 	if vs.Len() == 0 {
 		return false
 	}
@@ -386,6 +352,7 @@ func (this *Config) replace(s *bytes.Buffer, vs bytes.Buffer) bool {
 			// found
 			this.searchVar = false
 			s.WriteString(v)
+			vs.Reset()
 			return true
 		}
 	}
@@ -395,12 +362,80 @@ func (this *Config) replace(s *bytes.Buffer, vs bytes.Buffer) bool {
 			if strings.Compare(k, vs.String()) == 0 {
 				s.WriteString(v)
 				this.searchVar = false
+				vs.String()
 				return true
 			}
 		}
 	}
 
 	return false
+}
+
+func (this *Config) openBlock(s *bytes.Buffer) error {
+	// fixed { be close to key like server{
+	if this.searchKey && s.Len() > 0 {
+		this.getElement(s.String())
+		s.Reset()
+		this.inSearchVal()
+	}
+
+	// vars
+	vars := make(map[string]string)
+	this.vars = append(this.vars, this.currentVar)
+	this.currentVar = vars
+
+	this.inBlock++
+	//	这里说明了可能是切片或者map
+	if this.searchVal && s.Len() > 0 && this.current.Kind() == reflect.Map {
+		this.bkMulti++
+		if this.current.IsNil() {
+			this.current.Set(reflect.MakeMap(this.current.Type()))
+		}
+		var v reflect.Value
+		v = reflect.New(this.current.Type().Key())
+		this.pushElement(v)
+		err := this.set(s.String())
+		if err != nil {
+			return err
+		}
+		this.mapKey = this.current
+		this.popElement()
+		val := reflect.New(this.current.Type().Elem())
+		this.pushElement(val)
+	}
+
+	if this.current.Kind() == reflect.Slice {
+		this.bkMulti++
+		n := this.current.Len()
+		if this.current.Type().Elem().Kind() == reflect.Ptr {
+			this.current.Set(reflect.Append(this.current, reflect.New(this.current.Type().Elem().Elem())))
+		}else{
+			this.current.Set(reflect.Append(this.current, reflect.Zero(this.current.Type().Elem())))
+		}
+		this.pushElement(this.current.Index(n))
+	}
+	this.inSearchKey()
+	s.Reset()
+	return nil
+}
+
+func (this *Config) closeBlock(s *bytes.Buffer) {
+	if this.bkMulti > 0{
+		this.bkMulti--
+		val := this.current
+		this.popElement()
+		if this.current.Kind() == reflect.Map {
+			this.current.SetMapIndex(this.mapKey, val)
+		}
+	}
+
+	// vars
+	this.currentVar = this.vars[len(this.vars) - 1]
+	this.vars = this.vars[:len(this.vars) - 1]
+
+	this.inBlock--
+	this.popElement()
+	this.inSearchKey()
 }
 
 func (this *Config) inSearchKey() {
