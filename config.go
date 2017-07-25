@@ -362,7 +362,7 @@ func (this *Config) replace(s *bytes.Buffer, vs *bytes.Buffer) bool {
 			if strings.Compare(k, vs.String()) == 0 {
 				s.WriteString(v)
 				this.searchVar = false
-				vs.String()
+				vs.Reset()
 				return true
 			}
 		}
