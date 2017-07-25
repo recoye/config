@@ -13,6 +13,10 @@ import (
 	"unicode"
 )
 
+type IConfigLog interface {
+
+}
+
 type Config struct {
 	filename string
 	queue []reflect.Value
@@ -169,7 +173,7 @@ func (this *Config) parse() error {
 
 			if this.searchVarBlock && b == '}' {
 				this.searchVarBlock = false
-			    // 判定是不是有值
+			    // replace $???
 				this.searchVar = false
 				if !this.replace(&s, &vs) {
 					vsb.WriteByte(b)
@@ -179,7 +183,7 @@ func (this *Config) parse() error {
 			}
 
 			if b == ';' {
-				//	这里是要处理数据到this.current
+				//	copy to this.current
 				this.inSearchKey()
 				if this.searchVar {
 					if this.searchVarBlock {
@@ -371,7 +375,7 @@ func (this *Config) createBlock(s *bytes.Buffer) error {
 	this.currentVar = vars
 
 	this.inBlock++
-	//	这里说明了可能是切片或者map
+	//	slice or map?
 	if this.searchVal && s.Len() > 0 && this.current.Kind() == reflect.Map {
 		this.bkMulti++
 		if this.current.IsNil() {
