@@ -27,7 +27,8 @@ type Config struct {
 	inInclude int
 	canSkip bool
 	skip bool
-	bkMulti int
+	bkQueue []bool
+	bkMulti bool
 	mapKey reflect.Value
 	setVar bool
 	searchVar bool
@@ -376,8 +377,10 @@ func (this *Config) createBlock(s *bytes.Buffer) error {
 
 	this.inBlock++
 	//	slice or map?
+	this.bkQueue = append(this.bkQueue, this.bkMulti)
+	this.bkMulti = false
 	if this.searchVal && s.Len() > 0 && this.current.Kind() == reflect.Map {
-		this.bkMulti++
+		this.bkMulti = true
 		if this.current.IsNil() {
 			this.current.Set(reflect.MakeMap(this.current.Type()))
 		}
@@ -395,7 +398,7 @@ func (this *Config) createBlock(s *bytes.Buffer) error {
 	}
 
 	if this.current.Kind() == reflect.Slice {
-		this.bkMulti++
+		this.pushMultiBlock()
 		n := this.current.Len()
 		if this.current.Type().Elem().Kind() == reflect.Ptr {
 			this.current.Set(reflect.Append(this.current, reflect.New(this.current.Type().Elem().Elem())))
@@ -410,14 +413,14 @@ func (this *Config) createBlock(s *bytes.Buffer) error {
 }
 
 func (this *Config) closeBlock(s *bytes.Buffer) {
-	if this.bkMulti > 0{
-		this.bkMulti--
+	if this.bkMulti{
 		val := this.current
 		this.popElement()
 		if this.current.Kind() == reflect.Map {
 			this.current.SetMapIndex(this.mapKey, val)
 		}
 	}
+	this.popMultiBlock()
 
 	// vars
 	this.currentVar = this.vars[len(this.vars) - 1]
@@ -464,4 +467,14 @@ func (this *Config) popElement() {
 
 func (this *Config) delimiter(b byte) bool {
 	return unicode.IsSpace(rune(b))
+}
+
+func (this *Config) pushMultiBlock() {
+	this.bkQueue = append(this.bkQueue, this.bkMulti)
+	this.bkMulti = true
+}
+
+func (this *Config) popMultiBlock() {
+	this.bkMulti = this.bkQueue[len(this.bkQueue) - 1]
+	this.bkQueue = this.bkQueue[:len(this.bkQueue) - 1]
 }
