@@ -265,7 +265,7 @@ func (this *Config) set(s string) error {
 
 	switch this.current.Kind() {
 	case reflect.String:
-		this.current.SetString(s)
+		this.current.SetString(this.clearQuoted(s))
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		itmp,err := strconv.ParseInt(s, 10, this.current.Type().Bits())
 		if  err != nil {
@@ -297,7 +297,10 @@ func (this *Config) set(s string) error {
 			this.current.SetBool(btmp)
 		}
 	case reflect.Slice:
-		sf := strings.Fields(s)
+		sf, err := this.splitQuoted(s)
+		if err != nil {
+			return err
+		}
 		for _,sv := range sf {
 			n := this.current.Len()
 			this.current.Set(reflect.Append(this.current, reflect.Zero(this.current.Type().Elem())))
@@ -310,7 +313,10 @@ func (this *Config) set(s string) error {
 			this.current.Set(reflect.MakeMap(this.current.Type()))
 		}
 
-		sf := strings.Fields(s)
+		sf, err := this.splitQuoted(s)
+		if err != nil {
+			return err
+		}
 		if len(sf) != 2 {
 			return errors.New("Invalid Config")
 		}
@@ -477,4 +483,94 @@ func (this *Config) pushMultiBlock() {
 func (this *Config) popMultiBlock() {
 	this.bkMulti = this.bkQueue[len(this.bkQueue) - 1]
 	this.bkQueue = this.bkQueue[:len(this.bkQueue) - 1]
+}
+
+func (this *Config) clearQuoted(s string) string {
+	s = strings.TrimSpace(s)
+	if (s[0] == '"' && s[len(s) - 1] == '"') || (s[0] == '\'' && s[len(s) - 1] == '\'') {
+		return s[1:len(s) - 1]
+	}
+
+	return s
+}
+
+func (this *Config) splitQuoted(s string) ([]string, error){
+	var sq []string
+	s = strings.TrimSpace(s)
+	var last_space bool = true
+	var need_space bool = true
+	var d_quote bool = false
+	var s_quote bool = false
+	var quote bool = false
+	var ch byte
+	var vs bytes.Buffer
+
+	for i := 0; i < len(s); i++ {
+		ch = s[i]
+
+		if quote {
+			quote = false
+			vs.WriteByte(ch)
+			continue
+		}
+
+		if ch == '\\' {
+			quote = true
+			last_space = false
+			continue
+		}
+
+		if last_space {
+			last_space = false
+			switch ch {
+			case '"':
+				d_quote = true
+				need_space = false
+				continue
+			case '\'':
+				s_quote = true
+				need_space = false
+				continue
+			case ' ':
+				last_space = true
+				continue
+			}
+			vs.WriteByte(ch)
+		}else {
+			if need_space && this.delimiter(ch)  {
+				if vs.Len() > 0 {
+					sq = append(sq, vs.String())
+				}
+				vs.Reset()
+				last_space = true
+				continue
+			}
+
+			if d_quote {
+				if ch == '"' {
+					d_quote = false
+					need_space = true
+					continue
+				}
+			}else if s_quote {
+				if ch == '\'' {
+					s_quote = false
+					need_space = true
+					continue
+				}
+			}
+
+			vs.WriteByte(ch)
+		}
+	}
+
+	if quote || s_quote || d_quote {
+		return nil, errors.New(fmt.Sprintf("Invalid value: %v", s))
+	}
+
+	if vs.Len() > 0 {
+		sq = append(sq, vs.String())
+	}
+
+	return sq, nil
 }
