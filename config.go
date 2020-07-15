@@ -1,82 +1,92 @@
 package config
 
 import (
-	"os"
 	"bufio"
 	"bytes"
-	"reflect"
 	"errors"
-	"strings"
-	"strconv"
 	"fmt"
+	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
+	"strings"
 	"unicode"
+	"time"
 )
 
 type IConfigLog interface {
-
 }
 
+// Config A Config struct
 type Config struct {
-	filename string
-	queue []reflect.Value
-	current reflect.Value
-	searchVal bool
-	searchKey bool
-	inBlock int
-	inInclude int
-	canSkip bool
-	skip bool
-	bkQueue []bool
-	bkMulti bool
-	mapKey reflect.Value
-	setVar bool
-	searchVar bool
+	filename       string
+	queue          []reflect.Value
+	current        reflect.Value
+	searchVal      bool
+	searchKey      bool
+	inBlock        int
+	inInclude      int
+	canSkip        bool
+	skip           bool
+	bkQueue        []bool
+	bkMulti        bool
+	mapKey         reflect.Value
+	setVar         bool
+	searchVar      bool
 	searchVarBlock bool
-	vars []map[string]string
-	currentVar map[string]string
+	vars           []map[string]string
+	currentVar     map[string]string
+	camel          bool
 }
 
+// Cofnig.New create a config parser with filename
 func New(filename string) *Config {
-	return &Config{filename:filename}
+	return &Config{filename: filename, camel: true}
 }
 
-func (this *Config) Unmarshal(v interface{}) error{
+// Config.AutoCamel auto replace _ to camel
+func (c *Config) AutoCamel(b bool) {
+	c.camel = b
+}
+
+// Config.Unmarshal  unmarshal config file to v
+func (c *Config) Unmarshal(v interface{}) error {
 	rev := reflect.ValueOf(v)
 	if rev.Kind() != reflect.Ptr {
 		err := errors.New("non-pointer passed to Unmarshal")
 		return err
 	}
-	this.current = rev.Elem()
-	this.inSearchKey()
-	this.inBlock = 0
-	this.inInclude = 0
-	this.currentVar = make(map[string]string)
-	this.searchVar = false
-	this.setVar = false
-	this.searchVarBlock = false
-	return this.parse()
+	c.current = rev.Elem()
+	c.inSearchKey()
+	c.inBlock = 0
+	c.inInclude = 0
+	c.currentVar = make(map[string]string)
+	c.searchVar = false
+	c.setVar = false
+	c.searchVarBlock = false
+	return c.parse()
 }
 
-func (this *Config) Reload() error {
-	return this.parse()
+// Config.Reload reload config file
+func (c *Config) Reload() error {
+	return c.parse()
 }
 
-func (this *Config) parse() error {
+func (c *Config) parse() error {
 	var err error
 	var s bytes.Buffer
 	var vs bytes.Buffer
 	var vsb bytes.Buffer
-	if _, err = os.Stat(this.filename);os.IsNotExist(err) {
+	if _, err = os.Stat(c.filename); os.IsNotExist(err) {
 		return err
 	}
 
 	var fp *os.File
-	fp, err = os.Open(this.filename)
+	fp, err = os.Open(c.filename)
+	defer fp.Close()
 	if err != nil {
 		return err
 	}
-	defer fp.Close()
 
 	reader := bufio.NewReader(fp)
 	var b byte
@@ -86,97 +96,96 @@ func (this *Config) parse() error {
 			return nil
 		}
 
-		if this.canSkip && b == '#' {
+		if c.canSkip && b == '#' {
 			reader.ReadLine()
 			continue
 		}
-		if this.canSkip && b == '/' {
-			if this.skip {
+		if c.canSkip && b == '/' {
+			if c.skip {
 				reader.ReadLine()
-				this.skip = false
+				c.skip = false
 				continue
 			}
-			this.skip = true
+			c.skip = true
 			continue
 		}
-		if this.searchKey {
-			if this.delimiter(b) {
+		if c.searchKey {
+			if c.delimiter(b) {
 				if s.Len() > 0 {
-					this.inSearchVal()
+					c.inSearchVal()
 					if strings.Compare(s.String(), "include") == 0 {
 						s.Reset()
-						this.inInclude++
-						if this.inInclude > 100 {
+						c.inInclude++
+						if c.inInclude > 100 {
 							return errors.New("too many include, exceeds 100 limit!")
 						}
 						continue
-					}else if strings.Compare(s.String(), "set") == 0 {
+					} else if strings.Compare(s.String(), "set") == 0 {
 						s.Reset()
-						this.setVar = true
+						c.setVar = true
 						continue
 					}
-					this.getElement(s.String())
+					c.getElement(s.String())
 					s.Reset()
 				}
 				continue
 			}
 		}
 
-		if b == '{' && !this.searchVar && vs.Len() == 0 {
-			if err := this.createBlock(&s); err != nil {
+		if b == '{' && !c.searchVar && vs.Len() == 0 {
+			if err := c.createBlock(&s); err != nil {
 				return err
 			}
 			continue
 		}
 
-		if this.searchKey && b == '}' && this.inBlock > 0 {
-			this.closeBlock(&s)
+		if c.searchKey && b == '}' && c.inBlock > 0 {
+			c.closeBlock(&s)
 			continue
 		}
 
-		if this.searchVal {
+		if c.searchVal {
 			if b == '$' {
-				this.searchVar = true
+				c.searchVar = true
 				vs.Reset()
 				vsb.Reset()
 				vsb.WriteByte(b)
-				continue;
+				continue
 			}
 
-			if this.searchVar {
+			if c.searchVar {
 				if b == '{' {
 					if vs.Len() == 0 {
-						this.searchVarBlock = true
+						c.searchVarBlock = true
 						vsb.WriteByte(b)
 						continue
 					}
-					if !this.searchVarBlock {
-						if !this.replace(&s, &vs) {
+					if !c.searchVarBlock {
+						if !c.replace(&s, &vs) {
 							s.Write(vsb.Bytes())
 						}
 
 						// is block?
-						if err := this.createBlock(&s);err != nil {
+						if err := c.createBlock(&s); err != nil {
 							return err
-						}else{
+						} else {
 							continue
 						}
 					}
 				} // if b == '{'
 				// Is space
-				if this.delimiter(b) {
-					if !this.replace(&s, &vs) {
+				if c.delimiter(b) {
+					if !c.replace(&s, &vs) {
 						s.Write(vsb.Bytes())
 					}
 				}
 			}
 
-
-			if this.searchVarBlock && b == '}' {
-				this.searchVarBlock = false
-			    // replace $???
-				this.searchVar = false
-				if !this.replace(&s, &vs) {
+			if c.searchVarBlock && b == '}' {
+				c.searchVarBlock = false
+				// replace $???
+				c.searchVar = false
+				if !c.replace(&s, &vs) {
 					vsb.WriteByte(b)
 					s.Write(vsb.Bytes())
 				}
@@ -184,61 +193,61 @@ func (this *Config) parse() error {
 			}
 
 			if b == ';' {
-				//	copy to this.current
-				this.inSearchKey()
-				if this.searchVar {
-					if this.searchVarBlock {
+				//  copy to c.current
+				c.inSearchKey()
+				if c.searchVar {
+					if c.searchVarBlock {
 						return errors.New(vsb.String() + " is not terminated by }")
 					}
-					this.searchVar = false
-					this.searchVarBlock = false
-					if !this.replace(&s, &vs) {
+					c.searchVar = false
+					c.searchVarBlock = false
+					if !c.replace(&s, &vs) {
 						s.Write(vsb.Bytes())
 					}
 				}
 
 				// set to map
-				if this.setVar {
+				if c.setVar {
 					sf := strings.Fields(s.String())
 					if len(sf) != 2 {
 						return errors.New("Invalid Config")
 					}
-					this.currentVar[sf[0]] = sf[1]
-					this.setVar = false
+					c.currentVar[sf[0]] = sf[1]
+					c.setVar = false
 					s.Reset()
 					continue
 				}
 
-				if this.inInclude > 0 {
-					this.filename = strings.TrimSpace(s.String())
+				if c.inInclude > 0 {
+					c.filename = strings.TrimSpace(s.String())
 					s.Reset()
-					this.inInclude--
-					files, err := filepath.Glob(this.filename)
-					if err != nil{
+					c.inInclude--
+					files, err := filepath.Glob(c.filename)
+					if err != nil {
 						return err
 					}
-					for _,file := range files {
-						this.filename = file
-						if err := this.parse(); err != nil {
+					for _, file := range files {
+						c.filename = file
+						if err := c.parse(); err != nil {
 							return err
 						}
 					}
 					continue
 				}
 
-				err := this.set(s.String())
+				err := c.set(s.String())
 				if err != nil {
 					return err
 				}
 
 				s.Reset()
-				this.popElement()
+				c.popElement()
 				continue
-			}else if(this.searchVar) { // if b == ';'
+			} else if c.searchVar { // if b == ';'
 				vs.WriteByte(b)
 				vsb.WriteByte(b)
-				if ! this.searchVarBlock{
-					this.replace(&s, &vs)
+				if !c.searchVarBlock {
+					c.replace(&s, &vs)
 				}
 				continue
 			}
@@ -247,73 +256,81 @@ func (this *Config) parse() error {
 		s.WriteByte(b)
 	}
 
-	if !this.searchKey && this.inBlock > 0 {
+	if !c.searchKey && c.inBlock > 0 {
 		return errors.New("Invalid config file!")
 	}
 
 	return nil
 }
 
-func (this *Config) set(s string) error {
+func (c *Config) set(s string) error {
 	s = strings.TrimSpace(s)
-	if this.current.Kind() == reflect.Ptr {
-		if this.current.IsNil() {
-			this.current.Set(reflect.New(this.current.Type().Elem()))
+	if c.current.Kind() == reflect.Ptr {
+		if c.current.IsNil() {
+			c.current.Set(reflect.New(c.current.Type().Elem()))
 		}
-		this.current = this.current.Elem()
+		c.current = c.current.Elem()
 	}
 
-	switch this.current.Kind() {
+	switch c.current.Kind() {
 	case reflect.String:
-		this.current.SetString(this.clearQuoted(s))
+		c.current.SetString(c.clearQuoted(s))
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		itmp,err := strconv.ParseInt(s, 10, this.current.Type().Bits())
-		if  err != nil {
-			return err
+		if c.current.Type().String() == "time.Duration" {
+			if time, err := time.ParseDuration(s);err != nil {
+				return err
+			}else{
+				c.current.Set(reflect.ValueOf(time))
+			}
+		}else{
+			itmp, err := strconv.ParseInt(s, 10, c.current.Type().Bits())
+			if err != nil {
+				return err
+			}
+			c.current.SetInt(itmp)
 		}
-		this.current.SetInt(itmp)
-	case  reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		itmp,err := strconv.ParseUint(s, 10, this.current.Type().Bits())
-		if  err != nil {
-			return err
-		}
-		this.current.SetUint(itmp)
-	case reflect.Float32, reflect.Float64:
-		ftmp, err := strconv.ParseFloat(s, this.current.Type().Bits())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		itmp, err := strconv.ParseUint(s, 10, c.current.Type().Bits())
 		if err != nil {
 			return err
 		}
-		this.current.SetFloat(ftmp)
+		c.current.SetUint(itmp)
+	case reflect.Float32, reflect.Float64:
+		ftmp, err := strconv.ParseFloat(s, c.current.Type().Bits())
+		if err != nil {
+			return err
+		}
+		c.current.SetFloat(ftmp)
 	case reflect.Bool:
 		if s == "yes" || s == "on" {
-			this.current.SetBool(true)
-		}else if s == "no" || s == "off" {
-			this.current.SetBool(false)
-		}else{
+			c.current.SetBool(true)
+		} else if s == "no" || s == "off" {
+			c.current.SetBool(false)
+		} else {
 			btmp, err := strconv.ParseBool(s)
 			if err != nil {
 				return err
 			}
-			this.current.SetBool(btmp)
+			c.current.SetBool(btmp)
 		}
 	case reflect.Slice:
-		sf, err := this.splitQuoted(s)
+		sf, err := c.splitQuoted(s)
 		if err != nil {
 			return err
 		}
-		for _,sv := range sf {
-			n := this.current.Len()
-			this.current.Set(reflect.Append(this.current, reflect.Zero(this.current.Type().Elem())))
-			this.pushElement(this.current.Index(n))
-			this.set(sv)
-			this.popElement()
+		for _, sv := range sf {
+			n := c.current.Len()
+			c.current.Set(reflect.Append(c.current, reflect.Zero(c.current.Type().Elem())))
+			c.pushElement(c.current.Index(n))
+			c.set(sv)
+			c.popElement()
 		}
 	case reflect.Map:
-		if this.current.IsNil() {
-			this.current.Set(reflect.MakeMap(this.current.Type()))
+		if c.current.IsNil() {
+			c.current.Set(reflect.MakeMap(c.current.Type()))
 		}
 
-		sf, err := this.splitQuoted(s)
+		sf, err := c.splitQuoted(s)
 		if err != nil {
 			return err
 		}
@@ -321,44 +338,44 @@ func (this *Config) set(s string) error {
 			return errors.New("Invalid Config")
 		}
 		var v reflect.Value
-		v=reflect.New(this.current.Type().Key())
-		this.pushElement(v)
-		this.set(sf[0])
-		key := this.current
-		this.popElement()
-		v = reflect.New(this.current.Type().Elem())
-		this.pushElement(v)
-		this.set(sf[1])
-		val := this.current
-		this.popElement()
+		v = reflect.New(c.current.Type().Key())
+		c.pushElement(v)
+		c.set(sf[0])
+		key := c.current
+		c.popElement()
+		v = reflect.New(c.current.Type().Elem())
+		c.pushElement(v)
+		c.set(sf[1])
+		val := c.current
+		c.popElement()
 
-		this.current.SetMapIndex(key, val)
+		c.current.SetMapIndex(key, val)
 	default:
-		return errors.New(fmt.Sprintf("Invalid Type:%s", this.current.Kind()))
+		return errors.New(fmt.Sprintf("Invalid Type:%s", c.current.Kind()))
 	}
 	return nil
 }
 
-func (this *Config) replace(s *bytes.Buffer, vs *bytes.Buffer) bool {
+func (c *Config) replace(s *bytes.Buffer, vs *bytes.Buffer) bool {
 	if vs.Len() == 0 {
 		return false
 	}
 
-	for k,v := range this.currentVar{
+	for k, v := range c.currentVar {
 		if strings.Compare(k, vs.String()) == 0 {
 			// found
-			this.searchVar = false
+			c.searchVar = false
 			s.WriteString(v)
 			vs.Reset()
 			return true
 		}
 	}
 
-	for i:= len(this.vars) - 1; i >= 0 ;i-- {
-		for k, v := range this.vars[i] {
+	for i := len(c.vars) - 1; i >= 0; i-- {
+		for k, v := range c.vars[i] {
 			if strings.Compare(k, vs.String()) == 0 {
 				s.WriteString(v)
-				this.searchVar = false
+				c.searchVar = false
 				vs.Reset()
 				return true
 			}
@@ -368,133 +385,143 @@ func (this *Config) replace(s *bytes.Buffer, vs *bytes.Buffer) bool {
 	return false
 }
 
-func (this *Config) createBlock(s *bytes.Buffer) error {
+func (c *Config) createBlock(s *bytes.Buffer) error {
 	// fixed { be close to key like server{
-	if this.searchKey && s.Len() > 0 {
-		this.getElement(s.String())
+	if c.searchKey && s.Len() > 0 {
+		c.getElement(s.String())
 		s.Reset()
-		this.inSearchVal()
+		c.inSearchVal()
 	}
 
 	// vars
 	vars := make(map[string]string)
-	this.vars = append(this.vars, this.currentVar)
-	this.currentVar = vars
+	c.vars = append(c.vars, c.currentVar)
+	c.currentVar = vars
 
-	this.inBlock++
-	//	slice or map?
-	this.bkQueue = append(this.bkQueue, this.bkMulti)
-	this.bkMulti = false
-	if this.searchVal && s.Len() > 0 && this.current.Kind() == reflect.Map {
-		this.bkMulti = true
-		if this.current.IsNil() {
-			this.current.Set(reflect.MakeMap(this.current.Type()))
+	c.inBlock++
+	//  slice or map?
+	c.bkQueue = append(c.bkQueue, c.bkMulti)
+	c.bkMulti = false
+	if c.searchVal && s.Len() > 0 && c.current.Kind() == reflect.Map {
+		c.bkMulti = true
+		if c.current.IsNil() {
+			c.current.Set(reflect.MakeMap(c.current.Type()))
 		}
 		var v reflect.Value
-		v = reflect.New(this.current.Type().Key())
-		this.pushElement(v)
-		err := this.set(s.String())
+		v = reflect.New(c.current.Type().Key())
+		c.pushElement(v)
+		err := c.set(s.String())
 		if err != nil {
 			return err
 		}
-		this.mapKey = this.current
-		this.popElement()
-		val := reflect.New(this.current.Type().Elem())
-		this.pushElement(val)
+		c.mapKey = c.current
+		c.popElement()
+		val := reflect.New(c.current.Type().Elem())
+		c.pushElement(val)
 	}
 
-	if this.current.Kind() == reflect.Slice {
-		this.pushMultiBlock()
-		n := this.current.Len()
-		if this.current.Type().Elem().Kind() == reflect.Ptr {
-			this.current.Set(reflect.Append(this.current, reflect.New(this.current.Type().Elem().Elem())))
-		}else{
-			this.current.Set(reflect.Append(this.current, reflect.Zero(this.current.Type().Elem())))
+	if c.current.Kind() == reflect.Slice {
+		c.pushMultiBlock()
+		n := c.current.Len()
+		if c.current.Type().Elem().Kind() == reflect.Ptr {
+			c.current.Set(reflect.Append(c.current, reflect.New(c.current.Type().Elem().Elem())))
+		} else {
+			c.current.Set(reflect.Append(c.current, reflect.Zero(c.current.Type().Elem())))
 		}
-		this.pushElement(this.current.Index(n))
+		c.pushElement(c.current.Index(n))
 	}
-	this.inSearchKey()
+	c.inSearchKey()
 	s.Reset()
 	return nil
 }
 
-func (this *Config) closeBlock(s *bytes.Buffer) {
-	if this.bkMulti{
-		val := this.current
-		this.popElement()
-		if this.current.Kind() == reflect.Map {
-			this.current.SetMapIndex(this.mapKey, val)
+func (c *Config) closeBlock(s *bytes.Buffer) {
+	if c.bkMulti {
+		val := c.current
+		c.popElement()
+		if c.current.Kind() == reflect.Map {
+			c.current.SetMapIndex(c.mapKey, val)
 		}
 	}
-	this.popMultiBlock()
+	c.popMultiBlock()
 
 	// vars
-	this.currentVar = this.vars[len(this.vars) - 1]
-	this.vars = this.vars[:len(this.vars) - 1]
+	c.currentVar = c.vars[len(c.vars)-1]
+	c.vars = c.vars[:len(c.vars)-1]
 
-	this.inBlock--
-	this.popElement()
-	this.inSearchKey()
+	c.inBlock--
+	c.popElement()
+	c.inSearchKey()
 }
 
-func (this *Config) inSearchKey() {
-	this.searchVal = false
-	this.searchKey = true
-	this.canSkip = true
+func (c *Config) inSearchKey() {
+	c.searchVal = false
+	c.searchKey = true
+	c.canSkip = true
 }
 
-func (this *Config) inSearchVal() {
-	this.searchKey = false
-	this.searchVal = true
-	this.canSkip = false
+func (c *Config) inSearchVal() {
+	c.searchKey = false
+	c.searchVal = true
+	c.canSkip = false
 }
 
-func (this *Config) getElement(s string){
+func (c *Config) getElement(s string) {
 	s = strings.TrimSpace(s)
-	if this.current.Kind() == reflect.Ptr {
-		if this.current.IsNil() {
-			this.current.Set(reflect.New(this.current.Type().Elem()))
+	if c.current.Kind() == reflect.Ptr {
+		if c.current.IsNil() {
+			c.current.Set(reflect.New(c.current.Type().Elem()))
 		}
-		this.current = this.current.Elem()
+		c.current = c.current.Elem()
 	}
-	this.queue = append(this.queue, this.current)
-	this.current = this.current.FieldByName(strings.Title(s))
+	c.queue = append(c.queue, c.current)
+	// 如果是驼峰，就要处理一下
+	if c.camel {
+		stmp := strings.Split(s, "_")
+		buffer := bytes.Buffer{}
+		for _, v := range stmp {
+			buffer.WriteString(strings.Title(v))
+		}
+		c.current = c.current.FieldByName(buffer.String())
+	}else{
+		c.current = c.current.FieldByName(strings.Title(s))
+	}
 }
 
-func (this *Config) pushElement(v reflect.Value) {
-	this.queue = append(this.queue, this.current)
-	this.current = v
+func (c *Config) pushElement(v reflect.Value) {
+	c.queue = append(c.queue, c.current)
+	c.current = v
 }
 
-func (this *Config) popElement() {
-	this.current = this.queue[len(this.queue) - 1]
-	this.queue = this.queue[:len(this.queue) - 1]
+func (c *Config) popElement() {
+	c.current = c.queue[len(c.queue)-1]
+	c.queue = c.queue[:len(c.queue)-1]
 }
 
-func (this *Config) delimiter(b byte) bool {
+func (c *Config) delimiter(b byte) bool {
 	return unicode.IsSpace(rune(b))
 }
 
-func (this *Config) pushMultiBlock() {
-	this.bkQueue = append(this.bkQueue, this.bkMulti)
-	this.bkMulti = true
+func (c *Config) pushMultiBlock() {
+	c.bkQueue = append(c.bkQueue, c.bkMulti)
+	c.bkMulti = true
 }
 
-func (this *Config) popMultiBlock() {
-	this.bkMulti = this.bkQueue[len(this.bkQueue) - 1]
-	this.bkQueue = this.bkQueue[:len(this.bkQueue) - 1]
+func (c *Config) popMultiBlock() {
+	c.bkMulti = c.bkQueue[len(c.bkQueue)-1]
+	c.bkQueue = c.bkQueue[:len(c.bkQueue)-1]
 }
 
-func (this *Config) clearQuoted(s string) string {
+func (c *Config) clearQuoted(s string) string {
 	s = strings.TrimSpace(s)
-	if (s[0] == '"' && s[len(s) - 1] == '"') || (s[0] == '\'' && s[len(s) - 1] == '\'') {
-		return s[1:len(s) - 1]
+	if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
+		return s[1 : len(s)-1]
 	}
 
 	return s
 }
 
-func (this *Config) splitQuoted(s string) ([]string, error){
+func (c *Config) splitQuoted(s string) ([]string, error) {
 	var sq []string
 	s = strings.TrimSpace(s)
 	var last_space bool = true
@@ -536,8 +563,8 @@ func (this *Config) splitQuoted(s string) ([]string, error){
 				continue
 			}
 			vs.WriteByte(ch)
-		}else {
-			if need_space && this.delimiter(ch)  {
+		} else {
+			if need_space && c.delimiter(ch) {
 				if vs.Len() > 0 {
 					sq = append(sq, vs.String())
 				}
@@ -552,7 +579,7 @@ func (this *Config) splitQuoted(s string) ([]string, error){
 					need_space = true
 					continue
 				}
-			}else if s_quote {
+			} else if s_quote {
 				if ch == '\'' {
 					s_quote = false
 					need_space = true
