@@ -1,4 +1,4 @@
-# Config
+# Config(v2)
 Nginx configuration style parser with golang
 
 # Install
